@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: react-app
-        image: yepsamii/react-app:v1.3
+        image: yepsamii/react-app:v1.4
         ports:
         - containerPort: 80
         resources:
