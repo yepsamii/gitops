@@ -1,29 +1,29 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: react-app
+  name: fe-boilerplate
   namespace: frontend
   labels:
-    app: react-app
+    app: fe-boilerplate
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: react-app
+      app: fe-boilerplate
   template:
     metadata:
       labels:
-        app: react-app
+        app: fe-boilerplate
     spec:
       containers:
-      - name: react-app
-        image: yepsamii/react-app:v1.4
-        ports:
-        - containerPort: 80
-        resources:
-          requests:
-            memory: "64Mi"
-            cpu: "250m"
-          limits:
-            memory: "128Mi"
-            cpu: "500m"
+        - name: fe-boilerplate
+          image: yepsamii/fe-boilerplate:v1.4
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "250m"
+            limits:
+              memory: "128Mi"
+              cpu: "500m"
