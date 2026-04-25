@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: fe-boilerplate
-          image: yepsamii/fe-boilerplate:v1.5
+          image: yepsamii/fe-boilerplate:v1.4
           ports:
             - containerPort: 80
           resources:
