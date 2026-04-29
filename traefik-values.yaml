@@ -1,9 +1,10 @@
-# traefik.yml
+# traefik-values.yaml
 
+# Expose Traefik on ports 80 and 443
 ports:
   web:
     port: 80
-    nodePort: 30080
+    # No nodePort - let kind handle it
     http:
       redirections:
         entryPoint:
@@ -13,8 +14,9 @@ ports:
 
   websecure:
     port: 443
-    nodePort: 30443
+    # No nodePort - let kind handle it
 
+# Enable Dashboard
 ingressRoute:
   dashboard:
     enabled: true
