@@ -1,0 +1,17 @@
+# ingress.yaml
+
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: fe-boilerplate
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`app.local`)
+      kind: Rule
+      services:
+        - name: fe-boilerplate
+          port: 80
+  tls:
+    secretName: app-tls
