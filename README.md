@@ -200,20 +200,33 @@ kubectl apply -f argocd/ingress.yaml
 Since kind doesn't expose ports 30080/30443 by default, you need port-forward:
 
 ```bash
-# Setup port-forward (run in background)
+# Setup port-forward for Traefik (run in background)
 kubectl port-forward -n traefik svc/traefik 30080:80 30443:443 &
 
-# Or use this to keep it running even after terminal restart
-# Add to ~/.zshrc or create a startup script
+# Setup port-forward for ArgoCD (run in background)
+kubectl port-forward -n argocd svc/argocd-server 8080:80 &
 ```
 
-### Step 8: Access Services
+Or use the script:
+```bash
+make port-forward
+```
+
+### Step 8: Create ArgoCD Application (Optional)
+
+If you have an ArgoCD Application manifest:
+
+```bash
+kubectl apply -f argocd/manifest.yaml
+```
+
+### Step 9: Access Services
 
 | Service       | URL                          | Login |
 |--------------|-----------------------------|-------|
 | Your App     | https://app.local:30443     | - |
 | Traefik Dash | https://traefik.local:30443 | - |
-| ArgoCD      | https://argocd.local:30443  | `admin` + password |
+| ArgoCD       | http://localhost:8080       | `admin` + password |
 
 ### Get ArgoCD Admin Password
 
@@ -304,8 +317,14 @@ kubectl get ingressroute -A
 # View Traefik logs
 kubectl logs -n traefik deploy/traefik -f
 
-# Port-forward for debugging
+# Port-forward for Traefik
 kubectl port-forward -n traefik svc/traefik 30080:80 30443:443 &
+
+# Port-forward for ArgoCD
+kubectl port-forward -n argocd svc/argocd-server 8080:80 &
+
+# Or restart all port-forwards
+make restart-port-forward
 
 # Get ArgoCD password
 argocd admin initial-password -n argocd
@@ -345,6 +364,11 @@ kubectl delete namespace <name>
 3. Test from command line:
    ```bash
    curl -sk -H "Host: app.local" https://localhost:30443
+   ```
+
+4. Restart port-forward:
+   ```bash
+   make restart-port-forward
    ```
 
 ---
@@ -426,7 +450,7 @@ spec:
 |--------------|------------------|------------------|
 | App          | app.local:30080   | app.local:30443  |
 | Traefik Dash  | traefik.local:30080 | traefik.local:30443 |
-| ArgoCD       | argocd.local:30080 | argocd.local:30443 |
+| ArgoCD       | localhost:8080    | -               |
 
 *Replace ports 30080/30443 with 80/443 if using kind with extraPortMappings*
 
@@ -448,6 +472,37 @@ gitops/
 │   └── ingress.yaml
 └── argocd/                # ArgoCD manifests
     └── ingress.yaml
+```
+
+---
+
+## Using Makefile
+
+Quick commands to manage your setup:
+
+```bash
+# Full setup (pre-pull images, install everything)
+make setup
+# or
+make all
+
+# Individual commands
+make prepull               # Pre-pull Docker images
+make install-traefik      # Install Traefik only
+make install-app          # Deploy your app only
+make install-argocd      # Install ArgoCD only
+
+# Access
+make info                # Show access URLs
+make password            # Show ArgoCD password
+make test               # Test all services
+
+# Utility
+make status             # Show pod status
+make logs              # Show Traefik logs
+make restart-port-forward # Restart all port-forwards
+make delete-all        # Delete everything
+make help             # Show help
 ```
 
 ---
