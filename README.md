@@ -32,8 +32,8 @@ This README documents how to set up a local Kubernetes cluster using **kind** wi
 │  │  │              Traefik Pod (Ingress Controller)                │  │    │
 │  │  │                                                              │  │    │
 │  │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │  │    │
-│  │  │  │ :80 (web)    │  │ :443(websecure)│  │ :8080 (dashboard)│  │  │    │
-│  │  │  │ HTTP         │  │ HTTPS+TLS  │  │ API            │  │  │    │
+│  │  │  │ :80 (web)  │  │ :443(websecure)│  │ :8080 (dashboard)│  │  │    │
+│  │  │  │ HTTP       │  │ HTTPS+TLS    │  │ API              │  │  │    │
 │  │  │  └──────────────┘  └──────────────┘  └──────────────────┘  │  │    │
 │  │  └──────────────────────────────────────────────────────────────┘  │    │
 │  └────────────────────────────────────────────────────────────────────┘    │
@@ -41,27 +41,43 @@ This README documents how to set up a local Kubernetes cluster using **kind** wi
 │  ┌────────────────────────────────────────────────────────────────────┐    │
 │  │                    kind-worker (Docker)                              │    │
 │  │  ┌──────────────────────────────────────────────────────────────┐  │    │
-│  │  │              App Pods                                          │  │    │
-│  │  │  ┌──────────────────┐  ┌──────────────────────────────┐    │  │    │
-│  │  │  │ fe-boilerplate   │  │ argocd-server                 │    │  │    │
-│  │  │  │ (your app)      │  │ (ArgoCD)                    │    │  │    │
-│  │  │  └──────────────────┘  └──────────────────────────────┘    │  │    │
+│  │  │              App Pods                                      │  │    │
+│  │  │  ┌──────────────────┐  ┌──────────────────────────────┐  │    │
+│  │  │  │ fe-boilerplate   │  │ argocd-server                 │  │    │
+│  │  │  │ (your app)      │  │ (ArgoCD)                    │  │    │
+│  │  │  └──────────────────┘  └──────────────────────────────┘  │    │
 │  │  └──────────────────────────────────────────────────────────────┘  │    │
 │  │                                                                      │    │
-└───┴──────────────────────────────────────────────────────────────────────┘
+└───┴────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Prerequisites
+
+1. **Docker Desktop** installed and running
+2. **kubectl** installed (`brew install kubectl`)
+3. **helm** installed (`brew install helm`)
+4. **kind** installed (`brew install kind`)
+5. Access to your TLS certificate and key files
 
 ---
 
 ## Step-by-Step Setup
 
-### Step 1: Create Kind Cluster (Optional: With Port Mappings)
+### Step 1: Create Kind Cluster
 
 ```bash
 # Delete existing cluster (if any)
 kind delete cluster --name kind
 
-# Create cluster with port mappings to avoid port-forward
+# Create cluster
+kind create cluster --name kind
+```
+
+Or with port mappings (to use ports 80/443 directly):
+
+```bash
 cat > kind-config.yaml <<EOF
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
@@ -86,7 +102,7 @@ kind create cluster --name kind --config kind-config.yaml
 helm repo add traefik https://traefik.github.io/charts
 helm repo update
 
-# Create values file
+# Create values file (traefik-values.yaml)
 cat > traefik-values.yaml <<EOF
 # Traefik ingress configuration
 ports:
@@ -135,43 +151,74 @@ kubectl create secret tls app-tls --cert=tls.crt --key=tls.key -n frontend
 kubectl apply -f fe-boilerplate/
 ```
 
-### Step 5: Install ArgoCD (Optional)
+### Step 5: Install ArgoCD
 
 ```bash
 # Install ArgoCD
 kubectl create namespace argocd
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
-# Get initial admin password
-kubectl -n argocd get secret argocd-initial-secret -o jsonpath="{.data.password}" | base64 -d
+# Wait for pods to be ready
+kubectl get pods -n argocd -w
 ```
 
-### Step 6: Access Services
+### Step 6: Create ArgoCD IngressRoute
 
-#### Method A: With Kind Port Mappings (Recommended)
+```bash
+# Create argocd directory
+mkdir -p argocd
 
-If you created kind with `extraPortMappings`:
+# Create TLS secret for ArgoCD
+kubectl create secret tls argocd-tls --cert=tls.crt --key=tls.key -n argocd
 
-| Service       | URL                          |
-|--------------|------------------------------|
-| Your App     | https://app.local            |
-| Traefik Dash | https://traefik.local        |
-| ArgoCD       | https://argocd.local         |
+# Create IngressRoute (argocd/ingress.yaml)
+cat > argocd/ingress.yaml <<EOF
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(\`argocd.local\`)
+      kind: Rule
+      services:
+        - name: argocd-server
+          port: 80
+  tls:
+    secretName: argocd-tls
+EOF
 
-#### Method B: With Port-Forward (Alternative)
+# Apply IngressRoute
+kubectl apply -f argocd/ingress.yaml
+```
 
-If using default kind setup:
+### Step 7: Start Port-Forward (Required)
+
+Since kind doesn't expose ports 30080/30443 by default, you need port-forward:
 
 ```bash
 # Setup port-forward (run in background)
 kubectl port-forward -n traefik svc/traefik 30080:80 30443:443 &
 
-# Access services with ports
-| Service       | URL                          |
-|--------------|------------------------------|
-| Your App     | https://app.local:30443      |
-| Traefik Dash | https://traefik.local:30443  |
-| ArgoCD       | https://argocd.local:30443   |
+# Or use this to keep it running even after terminal restart
+# Add to ~/.zshrc or create a startup script
+```
+
+### Step 8: Access Services
+
+| Service       | URL                          | Login |
+|--------------|-----------------------------|-------|
+| Your App     | https://app.local:30443     | - |
+| Traefik Dash | https://traefik.local:30443 | - |
+| ArgoCD      | https://argocd.local:30443  | `admin` + password |
+
+### Get ArgoCD Admin Password
+
+```bash
+argocd admin initial-password -n argocd
 ```
 
 ---
@@ -181,13 +228,12 @@ kubectl port-forward -n traefik svc/traefik 30080:80 30443:443 &
 ### Request Flow: Browser → Your App
 
 ```
-1. User visits: https://app.local
+1. User visits: https://app.local:30443
 
 2. /etc/hosts resolves: app.local → 127.0.0.1
 
 3. Request goes to:
-   - Method A: kind mapped port 443 → Traefik
-   - Method B: localhost:30443 → port-forward → Traefik pod
+   - localhost:30443 → port-forward → Traefik pod (port 443)
 
 4. Traefik receives request:
    - Reads IngressRoute for app.local
@@ -216,12 +262,12 @@ kubectl port-forward -n traefik svc/traefik 30080:80 30443:443 &
 │  name: fe-boilerplate                                            │
 │  type: NodePort                                                 │
 │  selector: app=fe-boilerplate                                   │
-│  port: 80 → targetPort: 80                                      │
+��  port: 80 → targetPort: 80                                      │
 └─────────────────────────────────┬───────────────────────────────┘
                                   │
                                   │ routes to
                                   ▼
-┌─────────────────────────────────��─��───────────────────────────────┐
+┌───────────────────────────────────────────────────────────────────┐
 │                              POD                                  │
 │  name: fe-boilerplate-xxxxx                                      │
 │  image: yepsamii/fe-boilerplate:v1.10                           │
@@ -238,6 +284,7 @@ kubectl port-forward -n traefik svc/traefik 30080:80 30443:443 &
 | `fe-boilerplate/deployment.yaml` | Deploys your app pods |
 | `fe-boilerplate/service.yaml` | Exposes app as Kubernetes service |
 | `fe-boilerplate/ingress.yaml` | Defines ingress routing rules |
+| `argocd/ingress.yaml` | ArgoCD ingress route |
 | `tls.crt` / `tls.key` | TLS certificate files |
 
 ---
@@ -258,7 +305,10 @@ kubectl get ingressroute -A
 kubectl logs -n traefik deploy/traefik -f
 
 # Port-forward for debugging
-kubectl port-forward -n traefik svc/traefik 8080:8080
+kubectl port-forward -n traefik svc/traefik 30080:80 30443:443 &
+
+# Get ArgoCD password
+argocd admin initial-password -n argocd
 
 # Delete a namespace (cleanup)
 kubectl delete namespace <name>
@@ -294,14 +344,14 @@ kubectl delete namespace <name>
 
 3. Test from command line:
    ```bash
-   curl -H "Host: app.local" https://localhost:30443
+   curl -sk -H "Host: app.local" https://localhost:30443
    ```
 
 ---
 
 ## Full YAML Examples
 
-### Example: ingress.yaml (IngressRoute)
+### fe-boilerplate/ingress.yaml
 
 ```yaml
 apiVersion: traefik.io/v1alpha1
@@ -322,7 +372,7 @@ spec:
     secretName: app-tls
 ```
 
-### Example: deployment.yaml
+### fe-boilerplate/deployment.yaml
 
 ```yaml
 apiVersion: apps/v1
@@ -347,16 +397,58 @@ spec:
             - containerPort: 80
 ```
 
+### argocd/ingress.yaml
+
+```yaml
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`argocd.local`)
+      kind: Rule
+      services:
+        - name: argocd-server
+          port: 80
+  tls:
+    secretName: argocd-tls
+```
+
 ---
 
 ## Access URLs Summary
 
-| Service       | HTTP (redirects) | HTTPS           |
-|--------------|----------------|-----------------|
-| App          | app.local:30080 | app.local:30443 |
-| Traefik Dash | traefik.local:30080 | traefik.local:30443 |
+| Service       | HTTP              | HTTPS             |
+|--------------|------------------|------------------|
+| App          | app.local:30080   | app.local:30443  |
+| Traefik Dash  | traefik.local:30080 | traefik.local:30443 |
+| ArgoCD       | argocd.local:30080 | argocd.local:30443 |
 
 *Replace ports 30080/30443 with 80/443 if using kind with extraPortMappings*
+
+---
+
+## Project Structure
+
+```
+gitops/
+├── README.md                 # This file
+├── traefik-values.yaml       # Traefik Helm values
+├── tls.crt                  # TLS certificate
+├── tls.key                  # TLS private key
+├── kind-config.yaml          # Kind cluster config (optional)
+├── fe-boilerplate/          # Your app manifests
+│   ├── namespace.yaml
+│   ├── deployment.yaml
+│   ├── service.yaml
+│   └── ingress.yaml
+└── argocd/                # ArgoCD manifests
+    └── ingress.yaml
+```
 
 ---
 
