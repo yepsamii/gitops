@@ -226,7 +226,7 @@ kubectl apply -f argocd/manifest.yaml
 |--------------|-----------------------------|-------|
 | Your App     | https://app.local:30443     | - |
 | Traefik Dash | https://traefik.local:30443 | - |
-| ArgoCD       | http://localhost:8080       | `admin` + password |
+| ArgoCD       | https://argocd.local:8080       | `admin` + password |
 
 ### Get ArgoCD Admin Password
 
