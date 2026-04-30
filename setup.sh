@@ -52,6 +52,25 @@ check_prerequisites() {
     log_info "All prerequisites satisfied"
 }
 
+# Pre-pull Docker images for faster setup
+prepull_images() {
+    log_info "Pre-pulling Docker images..."
+
+    IMAGES=(
+        "docker.io/traefik:v3.6.13"
+        "docker.io/argoproj/argocd:v2.14.2"
+        "docker.io/library/redis:7.4-alpine"
+        "docker.io/dexidp/dex:v2.53.1"
+    )
+
+    for image in "${IMAGES[@]}"; do
+        log_info "Pulling $image..."
+        docker pull "$image" 2>/dev/null || true
+    done
+
+    log_info "Images pre-pulled"
+}
+
 # Add host entries
 setup_hosts() {
     log_info "Setting up /etc/hosts entries..."
@@ -89,8 +108,13 @@ setup_traefik() {
     # Create namespace
     kubectl create namespace traefik 2>/dev/null || true
 
-    # Install Traefik
-    helm install traefik traefik/traefik --namespace traefik -f traefik-values.yaml
+    # Install or upgrade Traefik
+    if helm list -n traefik | grep -q "traefik"; then
+        log_warn "Traefik already installed, upgrading..."
+        helm upgrade traefik traefik/traefik --namespace traefik -f traefik-values.yaml
+    else
+        helm install traefik traefik/traefik --namespace traefik -f traefik-values.yaml
+    fi
 
     log_info "Traefik installed"
 }
@@ -115,16 +139,17 @@ setup_app() {
 setup_argocd() {
     log_info "Installing ArgoCD..."
 
-    # Install ArgoCD
+    # Install ArgoCD (the CRD annotation warning can be ignored)
     kubectl create namespace argocd 2>/dev/null || true
-    kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+    kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml 2>/dev/null || true
 
     # Create TLS secret
     kubectl create secret tls argocd-tls --cert=tls.crt --key=tls.key -n argocd 2>/dev/null || true
 
     # Create IngressRoute
     mkdir -p argocd 2>/dev/null || true
-    cat > argocd/ingress.yaml <<EOF
+    rm -f argocd/ingress.yaml
+    cat > argocd/ingress.yaml <<'INGRESS'
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -134,35 +159,21 @@ spec:
   entryPoints:
     - websecure
   routes:
-    - match: Host(\`argocd.local\`)
+    - match: Host(`argocd.local`)
       kind: Rule
       services:
         - name: argocd-server
           port: 80
   tls:
     secretName: argocd-tls
-EOF
+INGRESS
 
     kubectl apply -f argocd/ingress.yaml
 
-    # Create ArgoCD Application manifest
-    mkdir -p argocd 2>/dev/null || true
-    cat > argocd/manifest.yaml <<EOF
-project: default
-source:
-  repoURL: https://github.com/yepsamii/gitops
-  path: fe-boilerplate
-  targetRevision: main
-destination:
-  server: https://kubernetes.default.svc
-syncPolicy:
-  automated:
-    enabled: true
-  syncOptions:
-    - CreateNamespace=true
-EOF
-
-    kubectl apply -f argocd/manifest.yaml
+    # Apply ArgoCD Application manifest (if file exists)
+    if [ -f argocd/manifest.yaml ]; then
+        kubectl apply -f argocd/manifest.yaml
+    fi
 
     log_info "ArgoCD installed"
 }
@@ -177,24 +188,12 @@ setup_argocd_app() {
         exit 1
     fi
 
-    # Create ArgoCD Application manifest
-    mkdir -p argocd 2>/dev/null || true
-    cat > argocd/manifest.yaml <<EOF
-project: default
-source:
-  repoURL: https://github.com/yepsamii/gitops
-  path: fe-boilerplate
-  targetRevision: main
-destination:
-  server: https://kubernetes.default.svc
-syncPolicy:
-  automated:
-    enabled: true
-  syncOptions:
-    - CreateNamespace=true
-EOF
-
-    kubectl apply -f argocd/manifest.yaml
+    # Apply ArgoCD Application manifest (if file exists)
+    if [ -f argocd/manifest.yaml ]; then
+        kubectl apply -f argocd/manifest.yaml
+    else
+        log_warn "argocd/manifest.yaml not found"
+    fi
 
     log_info "ArgoCD Application created"
 }
@@ -205,11 +204,15 @@ setup_port_forward() {
 
     # Kill existing port-forward
     pkill -f "port-forward.*traefik" 2>/dev/null || true
+    pkill -f "port-forward.*argocd" 2>/dev/null || true
 
-    # Start port-forward in background
+    # Start Traefik port-forward in background
     kubectl port-forward -n traefik svc/traefik 30080:80 30443:443 &
 
-    log_info "Port-forward started on ports 30080 (HTTP) and 30443 (HTTPS)"
+    # Start ArgoCD port-forward in background (to 8080)
+    kubectl port-forward -n argocd svc/argocd-server 8080:80 &
+
+    log_info "Port-forward started: Traefik (30080/30443), ArgoCD (8080)"
 }
 
 # Wait for pods
@@ -244,7 +247,7 @@ print_access_info() {
     echo "Access your services at:"
     echo "  - Your App:      https://app.local:30443"
     echo "  - Traefik:      https://traefik.local:30443"
-    echo "  - ArgoCD:       https://argocd.local:30443"
+    echo "  - ArgoCD:       http://localhost:8080"
     echo ""
     echo "ArgoCD login:"
     echo "  - Username: admin"
@@ -258,6 +261,7 @@ main() {
     log_info "Starting GitOps setup..."
 
     check_prerequisites
+    prepull_images
     setup_hosts
     setup_kind
     setup_traefik
@@ -290,6 +294,9 @@ case "${1:-all}" in
     argocd-app)
         setup_argocd_app
         ;;
+    prepull)
+        prepull_images
+        ;;
     port-forward)
         setup_port_forward
         ;;
@@ -300,7 +307,7 @@ case "${1:-all}" in
         get_argocd_password
         ;;
     *)
-        echo "Usage: $0 {all|kind|traefik|app|argocd|argocd-app|port-forward|hosts|password}"
+        echo "Usage: $0 {all|prepull|kind|traefik|app|argocd|argocd-app|port-forward|hosts|password}"
         exit 1
         ;;
 esac

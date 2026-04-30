@@ -14,12 +14,23 @@ NC := \033[0m
 .PHONY: all
 all: info setup
 
+# Check prerequisites
+.PHONY: check
+check:
+	@echo "$(GREEN)[INFO]$(NC) Checking prerequisites..."
+	@bash $(SETUP_SH) check
+
+.PHONY: prepull
+prepull:
+	@echo "$(GREEN)[INFO]$(NC) Pre-pulling Docker images..."
+	@bash $(SETUP_SH) prepull
+
 # =============================================================================
 # Setup Targets
 # =============================================================================
 
 .PHONY: setup
-setup: setup-hosts setup-kind setup-traefik setup-app setup-argocd setup-argocd-app port-forward wait
+setup: prepull setup-hosts setup-kind setup-traefik setup-app setup-argocd setup-argocd-app port-forward wait
 
 .PHONY: setup-hosts
 setup-hosts:
@@ -89,7 +100,7 @@ info:
 	@echo ""
 	@echo "  Your App:      https://app.local:30443"
 	@echo "  Traefik:       https://traefik.local:30443"
-	@echo "  ArgoCD:        https://argocd.local:30443"
+	@echo "  ArgoCD:        http://localhost:8080"
 	@echo ""
 	@echo "  ArgoCD Login:  admin / (run 'make password')"
 	@echo ""
@@ -123,8 +134,10 @@ logs:
 .PHONY: restart-port-forward
 restart-port-forward:
 	@pkill -f "port-forward.*traefik" || true
+	@pkill -f "port-forward.*argocd" || true
 	@kubectl port-forward -n traefik svc/traefik 30080:80 30443:443 &
-	@echo "Port-forward restarted"
+	@kubectl port-forward -n argocd svc/argocd-server 8080:80 &
+	@echo "Port-forward restarted: Traefik (30080/30443), ArgoCD (8080)"
 
 .PHONY: delete-all
 delete-all:
@@ -138,6 +151,7 @@ help:
 	@echo "GitOps Makefile Commands:"
 	@echo ""
 	@echo "  Setup:"
+	@echo "    make prepull            - Pre-pull Docker images"
 	@echo "    make setup              - Full setup (all services)"
 	@echo "    make install-traefik    - Install Traefik only"
 	@echo "    make install-app       - Deploy your app only"

@@ -1,12 +1,19 @@
-project: default
-source:
-  repoURL: https://github.com/yepsamii/gitops
-  path: fe-boilerplate
-  targetRevision: main
-destination:
-  server: https://kubernetes.default.svc
-syncPolicy:
-  automated:
-    enabled: true
-  syncOptions:
-    - CreateNamespace=true
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fe-boilerplate
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/yepsamii/gitops
+    path: fe-boilerplate
+    targetRevision: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: frontend
+  syncPolicy:
+    automated:
+      enabled: true
+    syncOptions:
+      - CreateNamespace=true
