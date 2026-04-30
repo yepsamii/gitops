@@ -1,0 +1,12 @@
+project: default
+source:
+  repoURL: https://github.com/yepsamii/gitops
+  path: fe-boilerplate
+  targetRevision: main
+destination:
+  server: https://kubernetes.default.svc
+syncPolicy:
+  automated:
+    enabled: true
+  syncOptions:
+    - CreateNamespace=true
